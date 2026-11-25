@@ -1,0 +1,20 @@
+{
+  "name": "discord-ai-bot",
+  "version": "2.0.0",
+  "description": "Bot Discord IA avec mémoire vectorielle + OpenRouter",
+  "main": "index.js",
+  "type": "module",
+  "engines": { "node": ">=20.0.0" },
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "deploy": "node deploy-commands.js",
+    "test:openrouter": "node -e \"import('./src/test-openrouter.js')\""
+  },
+  "dependencies": {
+    "discord.js": "^14.15.3",
+    "openai": "^4.55.0",
+    "@qdrant/js-client-node": "^1.8.0",
+    "dotenv": "^16.4.5"
+  }
+}

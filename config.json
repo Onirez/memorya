@@ -1,0 +1,41 @@
+{
+    "bot": {
+      "name": "Assistant IA",
+      "status": "apprend de vos messages 🧠",
+      "respondTo": {
+        "mentions": true,
+        "dms": true,
+        "replies": true,
+        "keywords": ["bot", "assistant", "ia", "hey", "salut"]
+      },
+      "cooldownMs": 2000,
+      "maxHistory": 15,
+      "ignoreBots": true
+    },
+    "ai": {
+      "provider": "openrouter",
+      "model": "meta-llama/llama-3.3-70b-instruct:free",
+      "fallbackModels": [
+        "google/gemini-2.0-flash-exp:free",
+        "qwen/qwen-2.5-72b-instruct:free",
+        "deepseek/deepseek-r1:free"
+      ],
+      "maxTokens": 500,
+      "temperature": 0.7,
+      "systemPrompt": "Tu es un assistant Discord utile, concis et sympa. Tu apprends continuellement via RAG. Réponds en français sauf demande contraire. Sois naturel, pas robotique."
+    },
+    "memory": {
+      "enabled": true,
+      "vectorDb": "qdrant",
+      "collection": "discord_memory",
+      "embeddingModel": "text-embedding-3-small",
+      "topK": 5,
+      "similarityThreshold": 0.72,
+      "storeObservations": true,
+      "observationRate": 0.1
+    },
+    "qdrant": {
+      "url": "http://localhost:6333",
+      "apiKey": ""
+    }
+  }
