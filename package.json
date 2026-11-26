@@ -1,6 +1,6 @@
 {
-  "name": "discord-ai-bot",
-  "version": "1.0.0",
+  "name": "discord-ai-autonomous",
+  "version": "2.0.0",
   "type": "module",
   "main": "index.js",
   "scripts": {
@@ -8,7 +8,6 @@
   },
   "dependencies": {
     "discord.js": "^14.15.3",
-    "openai": "^4.55.0",
     "dotenv": "^16.4.5"
   },
   "engines": {
