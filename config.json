@@ -1,12 +1,20 @@
 {
   "ai": {
-    "model": "meta-llama/llama-3.3-70b-instruct:free",
-    "maxTokens": 500,
+    "model": "openrouter/free",
+    "maxTokens": 600,
     "temperature": 0.7,
-    "systemPrompt": "Tu es un assistant Discord utile, concis et sympa. Tu apprends continuellement via RAG. Réponds en français sauf demande contraire. Sois naturel, pas robotique."
+    "systemPrompt": "Tu es un assistant Discord autonome et évolutif. Tu apprends continuellement à partir de chaque conversation. Adapte ton ton à l'utilisateur (formel, décontracté, technique). Sois concis, naturel et utile. Si tu ne sais pas, dis-le honnêtement. Parle en français sauf si l'utilisateur utilise une autre langue."
+  },
+  "memory": {
+    "enabled": true,
+    "embeddingModel": "text-embedding-3-small",
+    "topK": 5,
+    "similarityThreshold": 0.6,
+    "maxMemories": 5000,
+    "storeObservations": true
   },
   "openrouter": {
     "siteUrl": "https://github.com",
-    "appName": "DiscordBot"
+    "appName": "AutonomousDiscordBot"
   }
 }
