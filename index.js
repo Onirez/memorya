@@ -1,21 +1,6 @@
 import 'dotenv/config';
-import { readFileSync } from 'node:fs';
 import { Client, GatewayIntentBits, Events, ActivityType } from 'discord.js';
-import OpenAI from 'openai';
-
-// Lecture du config sans import assertion (compatible Node 18 → 24)
-const config = JSON.parse(
-  readFileSync(new URL('./config.json', import.meta.url), 'utf8')
-);
-
-if (!process.env.DISCORD_TOKEN) {
-  console.error('❌ DISCORD_TOKEN manquant dans les variables Railway');
-  process.exit(1);
-}
-if (!process.env.OPENROUTER_API_KEY) {
-  console.error('❌ OPENROUTER_API_KEY manquant dans les variables Railway');
-  process.exit(1);
-}
+import { generateResponse } from './src/rag.js';
 
 const client = new Client({
   intents: [
@@ -26,28 +11,34 @@ const client = new Client({
   ],
 });
 
-const openai = new OpenAI({
-  baseURL: 'https://openrouter.ai/api/v1',
-  apiKey: process.env.OPENROUTER_API_KEY,
-  defaultHeaders: {
-    'HTTP-Referer': config.openrouter.siteUrl || 'https://github.com',
-    'X-Title': config.openrouter.appName || 'DiscordBot',
-  },
-});
+const shortTermMemory = new Map(); // key -> [{role, content}]
+const cooldowns = new Map();
 
-const MODEL = process.env.OPENROUTER_MODEL || config.ai.model;
+function getKey(msg) {
+  return msg.guildId ? `${msg.guildId}-${msg.channelId}-${msg.author.id}` : `dm-${msg.author.id}`;
+}
+
+function getHistory(key) {
+  return shortTermMemory.get(key) || [];
+}
+
+function addHistory(key, role, content) {
+  const h = getHistory(key);
+  h.push({ role, content });
+  if (h.length > 20) h.splice(0, h.length - 20);
+  shortTermMemory.set(key, h);
+}
 
 client.once(Events.ClientReady, (c) => {
   console.log(`✅ Connecté: ${c.user.tag} (ID: ${c.user.id})`);
   console.log(`✅ Serveurs: ${c.guilds.cache.size}`);
-  c.user.setActivity('je réponds à chaque fois 🤖', { type: ActivityType.Watching });
+  c.user.setActivity('je m\'améliore en continu 🧠', { type: ActivityType.Watching });
 });
 
 client.on(Events.MessageCreate, async (message) => {
-  if (message.author.bot) return;
-  if (message.author.id === client.user.id) return;
+  if (message.author.bot || message.author.id === client.user.id) return;
 
-  // Répond à chaque fois : mention, DM, ou réponse au bot
+  // Déclenchement : mention, DM, ou réponse au bot
   const shouldReply =
     message.mentions.has(client.user) ||
     !message.guildId ||
@@ -55,24 +46,29 @@ client.on(Events.MessageCreate, async (message) => {
 
   if (!shouldReply) return;
 
+  // Cooldown anti-spam
+  const now = Date.now();
+  if (cooldowns.get(message.author.id) && now - cooldowns.get(message.author.id) < 2000) return;
+  cooldowns.set(message.author.id, now);
+
   await message.channel.sendTyping();
 
-  try {
-    const completion = await openai.chat.completions.create({
-      model: MODEL,
-      messages: [
-        { role: 'system', content: config.ai.systemPrompt },
-        { role: 'user', content: message.content },
-      ],
-      max_tokens: config.ai.maxTokens,
-      temperature: config.ai.temperature,
-    });
+  const key = getKey(message);
+  const history = getHistory(key);
 
-    const response = completion.choices[0].message.content;
-    await message.reply({ content: response });
-  } catch (err) {
-    console.error('❌ Erreur OpenRouter:', err.message);
-    await message.reply('🤖 Je suis surchargé, réessaie dans un instant.');
+  try {
+    const response = await generateResponse(message, history);
+    addHistory(key, 'user', message.content);
+    addHistory(key, 'assistant', response);
+
+    const replyOpts = (message.mentions.has(client.user) || message.reference || !message.guildId)
+      ? { reply: { messageReference: message.id, failIfNotExists: false } }
+      : {};
+
+    await message.reply({ content: response, ...replyOpts });
+  } catch (e) {
+    console.error('❌ Erreur:', e.message);
+    await message.reply('🤖 Coup de fatigue, réessaie plus tard.');
   }
 });
 
