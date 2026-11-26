@@ -1,76 +1,82 @@
-import http from 'http';
-const server = http.createServer((req, res) => res.end('OK'));
-server.listen(process.env.PORT || 3000);
-
 import 'dotenv/config';
+import { readFileSync } from 'node:fs';
 import { Client, GatewayIntentBits, Events, ActivityType } from 'discord.js';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-import config from './config.json' assert { type: 'json' };
+import OpenAI from 'openai';
 
-import { initVectorMemory } from './src/memory/vectorStore.js';
-import { handleMessage } from './src/events/messageCreate.js';
-import { registerCommands } from './src/commands/chat.js';
+// Lecture du config sans import assertion (compatible Node 18 → 24)
+const config = JSON.parse(
+  readFileSync(new URL('./config.json', import.meta.url), 'utf8')
+);
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+if (!process.env.DISCORD_TOKEN) {
+  console.error('❌ DISCORD_TOKEN manquant dans les variables Railway');
+  process.exit(1);
+}
+if (!process.env.OPENROUTER_API_KEY) {
+  console.error('❌ OPENROUTER_API_KEY manquant dans les variables Railway');
+  process.exit(1);
+}
 
-// Client Discord
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages,
-    GatewayIntentBits.GuildMessageReactions,
   ],
 });
 
-// Stockage mémoire court terme (Map simple)
-const shortTermMemory = new Map();
-const cooldowns = new Map();
+const openai = new OpenAI({
+  baseURL: 'https://openrouter.ai/api/v1',
+  apiKey: process.env.OPENROUTER_API_KEY,
+  defaultHeaders: {
+    'HTTP-Referer': config.openrouter.siteUrl || 'https://github.com',
+    'X-Title': config.openrouter.appName || 'DiscordBot',
+  },
+});
 
-function getMemoryKey(msg) {
-  return msg.guildId ? `${msg.guildId}-${msg.channelId}-${msg.author.id}` : `dm-${msg.author.id}`;
-}
+const MODEL = process.env.OPENROUTER_MODEL || config.ai.model;
 
-function getHistory(key) { return shortTermMemory.get(key) || []; }
-function addHistory(key, role, content) {
-  const h = getHistory(key);
-  h.push({ role, content });
-  if (h.length > config.bot.maxHistory) h.splice(0, h.length - config.bot.maxHistory);
-  shortTermMemory.set(key, h);
-}
-
-// ===== EVENTS =====
-client.once(Events.ClientReady, async (c) => {
-  console.log(`✅ Connecté: ${c.user.tag}`);
-  c.user.setActivity(config.bot.status, { type: ActivityType.Watching });
-  await initVectorMemory(); // Connexion Qdrant
-  await registerCommands(c); // Slash commands
+client.once(Events.ClientReady, (c) => {
+  console.log(`✅ Connecté: ${c.user.tag} (ID: ${c.user.id})`);
+  console.log(`✅ Serveurs: ${c.guilds.cache.size}`);
+  c.user.setActivity('je réponds à chaque fois 🤖', { type: ActivityType.Watching });
 });
 
 client.on(Events.MessageCreate, async (message) => {
-  await handleMessage(message, client, config, getHistory, addHistory, cooldowns, getMemoryKey);
+  if (message.author.bot) return;
+  if (message.author.id === client.user.id) return;
+
+  // Répond à chaque fois : mention, DM, ou réponse au bot
+  const shouldReply =
+    message.mentions.has(client.user) ||
+    !message.guildId ||
+    (message.reference && message.reference.messageId);
+
+  if (!shouldReply) return;
+
+  await message.channel.sendTyping();
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: MODEL,
+      messages: [
+        { role: 'system', content: config.ai.systemPrompt },
+        { role: 'user', content: message.content },
+      ],
+      max_tokens: config.ai.maxTokens,
+      temperature: config.ai.temperature,
+    });
+
+    const response = completion.choices[0].message.content;
+    await message.reply({ content: response });
+  } catch (err) {
+    console.error('❌ Erreur OpenRouter:', err.message);
+    await message.reply('🤖 Je suis surchargé, réessaie dans un instant.');
+  }
 });
 
-client.on(Events.InteractionCreate, async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
-  const { commandName } = interaction;
-  if (commandName === 'clear') {
-    shortTermMemory.delete(getMemoryKey(interaction));
-    return interaction.reply({ content: '🧹 Mémoire court terme effacée.', ephemeral: true });
-  }
-  if (commandName === 'stats') {
-    const { getStats } = await import('./src/memory/vectorStore.js');
-    const stats = await getStats();
-    return interaction.reply({ content: `📊 Vecteurs: ${stats.points}`, ephemeral: true });
-  }
-});
+process.on('unhandledRejection', (e) => console.error('💥 Unhandled:', e));
+process.on('uncaughtException', (e) => console.error('💥 Uncaught:', e));
 
-// Error handling
-process.on('unhandledRejection', e => console.error('💥 Unhandled:', e));
-process.on('uncaughtException', e => console.error('💥 Uncaught:', e));
-
-// Login
 client.login(process.env.DISCORD_TOKEN);
